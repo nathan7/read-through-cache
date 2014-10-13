@@ -4,7 +4,6 @@ var Path = require('path')
   , fs = require('fs')
   , mkdirp = require('mkdirp')
   , through = require('through')
-  , RE_HEX = /^[0-9a-f]{32,}$/
 
 function noop() {}
 function unimplemented() { throw new Error('unimplemented') }
@@ -16,30 +15,21 @@ function Cache(opts) {
   if (typeof opts.path != 'string') throw new TypeError('path must be a string')
 
   this.path = opts.path + ''
-  this.paranoid = !!opts.paranoid
   this.timeout = opts.timeout | 0
   this.__pending = Object.create(null)
 }
 
-Cache.prototype._storePath = function(digest) { return Path.join(this.path, 'store', digest) }
-Cache.prototype._tmpPath = function(digest) { return Path.join(this.path, 'tmp', digest) }
+Cache.prototype._storePath = function(key) { return Path.join(this.path, 'store', key) }
+Cache.prototype._tmpPath = function(key) { return Path.join(this.path, 'tmp', key) }
 
 Cache.prototype._createReadStream = unimplemented
-Cache.prototype._createHash = unimplemented
 
-Cache.prototype.createReadStream = function(digest) { var self = this
-  digest = String(digest).toLowerCase()
+Cache.prototype.createReadStream = function(key) { var self = this
+  key = String(key)
 
   var output = through()
 
-  if (!RE_HEX.test(digest)) {
-    return output
-    process.nextTick(function() {
-      output.emit('error', new Error('not a valid hash: `' + digest + '`'))
-    })
-  }
-
-  var pending = this.__pending[digest]
+  var pending = this.__pending[key]
   if (!pending) {
     pending = through()
 
@@ -47,7 +37,7 @@ Cache.prototype.createReadStream = function(digest) { var self = this
       , remove = function() {
           if (removed) return
           pending.removeListener('error', remove)
-          delete self.__pending[digest]
+          delete self.__pending[key]
           removed = true
         }
     pending
@@ -55,7 +45,7 @@ Cache.prototype.createReadStream = function(digest) { var self = this
       .once('error', remove)
 
     pending.setMaxListeners(0)
-    this.__pending[digest] = pending
+    this.__pending[key] = pending
     this.__acquire(arguments, pending)
   }
 
@@ -64,34 +54,23 @@ Cache.prototype.createReadStream = function(digest) { var self = this
     .pipe(output)
 }
 
-Cache.prototype.__acquire = function(args, pending, safe) { var self = this
-  var digest = args[0]
+Cache.prototype.__acquire = function(args, pending) { var self = this
+  var key = args[0]
     , error = errorFn(pending)
 
-  var paranoidRead = this.paranoid && !safe
-    , fd = typeof safe == 'number' ? safe : null
-
-  var input = fs.createReadStream(this._storePath(digest), { autoClose: !paranoidRead, fd: fd, start: 0 })
+  var input = fs.createReadStream(this._storePath(key))
       .on('error', function(err) {
         if (err.code !== 'ENOENT') return error(err)
         self.__acquireFresh(args, pending)
       })
 
-  if (!paranoidRead) return input.on('open', function() { this.pipe(pending) })
-
-  input.on('open', function(fd) {
-    error.cleanup.push(function() { fs.close(fd, noop) })
-    self.__hash(input, digest, function(err) {
-      if (err) return error(err)
-      self.__acquire(args, pending, fd)
-    })
-  })
+  return input.on('open', function() { this.pipe(pending) })
 }
 
 Cache.prototype.__acquireFresh = function(args, pending) { var self = this
-  var digest = args[0]
-    , store = this._storePath(digest)
-    , tmp = this._tmpPath(digest)
+  var key = args[0]
+    , store = this._storePath(key)
+    , tmp = this._tmpPath(key)
     , error = errorFn(pending)
 
   mkdirp(Path.dirname(tmp), function(err) { if (err) error(err); else writeStream() })
@@ -133,13 +112,10 @@ Cache.prototype.__acquireFresh = function(args, pending) { var self = this
   function readStream() {
     try { input = self._createReadStream.apply(self, args) }
     catch (e) { return error(e) }
-    input.on('error', error)
-    pipe()
-  }
-
-  function pipe() {
-    self.__hash(input, digest, error.else(makeStore))
+    input
       .pipe(output)
+      .on('error', error)
+      .on('finish', makeStore)
   }
 
   function makeStore() {
@@ -155,14 +131,13 @@ Cache.prototype.__acquireFresh = function(args, pending) { var self = this
 
   function deliver() {
     // up we go again
-    // we explicitly disable paranoid mode, because we just checked the hash of what we wrote
-    self.__acquire(args, pending, true)
+    self.__acquire(args, pending)
   }
 }
 
 Cache.prototype.__acquireWatch = function(args, pending) { var self = this
-  var digest = args[0]
-    , tmp = self._tmpPath(digest)
+  var key = args[0]
+    , tmp = self._tmpPath(key)
     , error = errorFn(pending)
 
   // let's watch if they finish
@@ -210,20 +185,6 @@ Cache.prototype.__acquireWatch = function(args, pending) { var self = this
       })
     })
   }
-}
-
-Cache.prototype.__hash = function(stream, digest, cb) {
-  var hash = this._createHash()
-  return stream
-    .on('data', function(chunk) { hash.update(chunk) })
-    .on('end', function() {
-      var actualDigest = Buffer(hash.digest()).toString('hex')
-      if (actualDigest === digest) return cb()
-      var err = new Error('hashes did not match. expected `' + digest + '`, got `' + actualDigest + '`')
-      err.expected = digest
-      err.actual = actualDigest
-      cb(err)
-    })
 }
 
 function errorFn(pending) {

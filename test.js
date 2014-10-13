@@ -2,16 +2,14 @@
 var Cache = require('./')
   , fs = require('fs')
   , mkdirp = require('mkdirp')
-  , crypto = require('crypto')
   , through = require('through')
   , http = require('http')
   , path = __dirname + '/test'
-  , cache = Cache({ path: path, paranoid: true })
+  , cache = Cache({ path: path })
 
 mkdirp.sync(path + '/output')
 
-cache._createHash = function() { return crypto.createHash('sha1') }
-cache._createReadStream = function(hash, url) {
+cache._createReadStream = function(key, url) {
   var stream = through()
   http.get(url)
     .on('response', function(res) {
