@@ -5,7 +5,7 @@
   "main": "index.js",
   "repository": {
     "type": "git",
-    "url": "git://github.com/vigour-io/read-through-cache.git"
+    "url": "git://github.com/nathan7/read-through-cache.git"
   },
   "keywords": [
     "read-through",
@@ -15,9 +15,9 @@
   "author": "Nathan Zadoks",
   "license": "ISC",
   "bugs": {
-    "url": "https://github.com/vigour-io/read-through-cache/issues"
+    "url": "https://github.com/nathan7/read-through-cache/issues"
   },
-  "homepage": "https://github.com/vigour-io/read-through-cache",
+  "homepage": "https://github.com/nathan7/read-through-cache",
   "dependencies": {
     "mkdirp": "^0.5.0",
     "through": "^2.3.4"
