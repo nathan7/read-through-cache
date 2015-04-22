@@ -93,7 +93,6 @@ Cache.prototype.__acquireFresh = function(args, pending) { var self = this
         function touch() {
           var present = +new Date()
           fs.futimes(fd, present, present, noop)
-          setTimeout(touch, self.timeout / 2)
         }
 
         function clearTouch() {
